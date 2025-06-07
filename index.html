@@ -1,39 +1,302 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>My p5.js Website</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Include p5.js from CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f9f9f9; color: #222; }
-        h1 { color: #007acc; }
-        .container { max-width: 700px; margin: auto; background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07);}
-        a { color: #007acc; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
+<meta charset="UTF-8">
+<title>Basic Tower Defense</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { font-family: sans-serif; margin: 0; overflow: hidden; background: #d4edda; display: flex; flex-direction: column; align-items: center; }
+#gameCanvas { border: 1px solid #000; background: #f8f9fa; margin-top: 20px; }
+#ui { margin-top: 10px; display: flex; gap: 10px; }
+.button { padding: 8px 15px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 5px; }
+.button:hover { background-color: #0056b3; }
+#stats { margin-top: 10px; font-size: 1.1em; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <h1>Welcome to My p5.js Website!</h1>
-        <p>This site uses <a href="https://p5js.org/" target="_blank">p5.js</a> for creative coding.</p>
-        <p>Edit the sketch in the script below to make your own art!</p>
-        <hr>
-        <p><em>Made by blob902</em></p>
-    </div>
-    <script>
-      // This is your p5.js sketch!
-      function setup() {
-        createCanvas(400, 400);
-        background(240);
-      }
+<h1>Basic Tower Defense</h1>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+<button class="button" onclick="setPlacingTower(true)">Place Tower ($20)</button>
+</div>
+<div id="stats">
+<p>Money: <span id="money">100</span></p>
+<p>Score: <span id="score">0</span></p>
+<p>Lives: <span id="lives">10</span></p>
+</div>
+<script src="[https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js](https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js)"></script>
+<script>
+    let canvasWidth = 600;
+    let canvasHeight = 400;
+    let path = [
+        { x: 0, y: 50 },
+        { x: 100, y: 50 },
+        { x: 100, y: 150 },
+        { x: 300, y: 150 },
+        { x: 300, y: 250 },
+        { x: canvasWidth, y: 250 }
+    ];
+    let enemies = [];
+    let towers = [];
+    let projectiles = [];
+    let waveInterval = 120; // Frames between enemy spawns
+    let waveTimer = 0;
+    let enemySpeed = 1;
+    let towerCost = 20;
+    let placingTower = false;
+    let money = 100;
+    let score = 0;
+    let lives = 10;
 
-      function draw() {
-        fill(100, 200, 255);
-        ellipse(width/2, height/2, 150, 150);
-        noLoop(); // Prevent continuous redraw
-      }
-    </script>
+    function setup() {
+        let canvas = createCanvas(canvasWidth, canvasHeight);
+        canvas.parent('gameCanvas');
+    }
+
+    function draw() {
+        background(240);
+        drawPath();
+        updateEnemies();
+        drawEnemies();
+        updateTowers();
+        drawTowers();
+        updateProjectiles();
+        drawProjectiles();
+        spawnEnemies();
+        updateUI();
+
+        if (lives <= 0) {
+            gameOver();
+        }
+    }
+
+    function drawPath() {
+        stroke(100);
+        strokeWeight(20);
+        noFill();
+        beginShape();
+        for (let point of path) {
+            vertex(point.x, point.y);
+        }
+        endShape();
+        strokeWeight(1);
+        stroke(0);
+    }
+
+    class Enemy {
+        constructor() {
+            this.pos = createVector(path [0].x, path [0].y);
+            this.pathIndex = 0;
+            this.size = 20;
+            this.health = 50;
+            this.speed = enemySpeed;
+        }
+
+        update() {
+            if (this.pathIndex < path.length - 1) {
+                let target = createVector(path [this.pathIndex + 1].x, path [this.pathIndex + 1].y);
+                let dir = p5.Vector.sub(target, this.pos).normalize().mult(this.speed);
+                this.pos.add(dir);
+                if (p5.Vector.dist(this.pos, target) < this.speed) {
+                    this.pathIndex++;
+                }
+            } else {
+                lives--;
+                this.remove = true;
+            }
+        }
+
+        draw() {
+            fill(200, 50, 50);
+            ellipse(this.pos.x, this.pos.y, this.size, this.size);
+            fill(0);
+            textAlign(CENTER, CENTER);
+            text(Math.ceil(this.health), this.pos.x, this.pos.y);
+        }
+
+        takeDamage(damage) {
+            this.health -= damage;
+            if (this.health <= 0) {
+                this.remove = true;
+                money += 5;
+                score += 10;
+            }
+        }
+    }
+
+    function updateEnemies() {
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            enemies [i].update();
+            if (enemies [i].remove) {
+                enemies.splice(i, 1);
+            }
+        }
+    }
+
+    function drawEnemies() {
+        for (let enemy of enemies) {
+            enemy.draw();
+        }
+    }
+
+    function spawnEnemies() {
+        if (frameCount % waveInterval === 0) {
+            enemies.push(new Enemy());
+        }
+    }
+
+    class Tower {
+        constructor(x, y) {
+            this.pos = createVector(x, y);
+            this.size = 30;
+            this.range = 100;
+            this.attackInterval = 60; // Frames between attacks
+            this.attackTimer = 0;
+            this.damage = 10;
+        }
+
+        draw() {
+            fill(150);
+            rectMode(CENTER);
+            rect(this.pos.x, this.pos.y, this.size, this.size);
+            fill(255, 255, 0, 100);
+            ellipse(this.pos.x, this.pos.y, this.range * 2);
+            rectMode(CORNER);
+        }
+
+        update() {
+            this.attackTimer++;
+            if (this.attackTimer >= this.attackInterval) {
+                this.attack();
+                this.attackTimer = 0;
+            }
+        }
+
+        attack() {
+            let target = this.findTarget();
+            if (target) {
+                projectiles.push(new Projectile(this.pos.x, this.pos.y, target));
+            }
+        }
+
+        findTarget() {
+            let closestEnemy = null;
+            let minDistSq = Infinity;
+            for (let enemy of enemies) {
+                let dSq = p5.Vector.distSq(this.pos, enemy.pos);
+                if (dSq <= this.range * this.range) {
+                    if (dSq < minDistSq) {
+                        minDistSq = dSq;
+                        closestEnemy = enemy;
+                    }
+                }
+            }
+            return closestEnemy;
+        }
+    }
+
+    function updateTowers() {
+        for (let tower of towers) {
+            tower.update();
+        }
+    }
+
+    function drawTowers() {
+        for (let tower of towers) {
+            tower.draw();
+        }
+    }
+
+    function mouseClicked() {
+        if (placingTower) {
+            if (money >= towerCost) {
+                let snappedX = Math.floor(mouseX / 20) * 20 + 10;
+                let snappedY = Math.floor(mouseY / 20) * 20 + 10;
+                let canPlace = true;
+                // Basic check to prevent placing on the path (improve this!)
+                for (let point of path) {
+                    if (dist(snappedX, snappedY, point.x, point.y) < 15) {
+                        canPlace = false;
+                        break;
+                    }
+                }
+                if (canPlace) {
+                    towers.push(new Tower(snappedX, snappedY));
+                    money -= towerCost;
+                } else {
+                    console.log("Cannot place tower here.");
+                }
+            } else {
+                alert("Not enough money!");
+            }
+            setPlacingTower(false);
+        }
+    }
+
+    function setPlacingTower(isPlacing) {
+        placingTower = isPlacing;
+        if (placingTower) {
+            console.log("Placing tower...");
+        }
+    }
+
+    class Projectile {
+        constructor(startX, startY, target) {
+            this.pos = createVector(startX, startY);
+            this.target = target;
+            this.speed = 5;
+            this.size = 10;
+        }
+
+        update() {
+            if (this.target && !this.target.remove) {
+                let dir = p5.Vector.sub(this.target.pos, this.pos).normalize().mult(this.speed);
+                this.pos.add(dir);
+                if (p5.Vector.dist(this.pos, this.target.pos) < this.speed) {
+                    this.hitTarget();
+                    this.remove = true;
+                }
+            } else {
+                this.remove = true; // Target died before projectile reached it
+            }
+        }
+
+        draw() {
+            fill(0, 255, 0);
+            ellipse(this.pos.x, this.pos.y, this.size, this.size);
+        }
+
+        hitTarget() {
+            this.target.takeDamage(10);
+        }
+    }
+
+    function updateProjectiles() {
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            projectiles [i].update();
+            if (projectiles [i].remove) {
+                projectiles.splice(i, 1);
+            }
+        }
+    }
+
+    function drawProjectiles() {
+        for (let projectile of projectiles) {
+            projectile.draw();
+        }
+    }
+
+    function updateUI() {
+        document.getElementById('money').innerText = money;
+        document.getElementById('score').innerText = score;
+        document.getElementById('lives').innerText = lives;
+    }
+
+    function gameOver() {
+        noLoop();
+        alert("Game Over! Score: " + score);
+    }
+</script>
+
 </body>
 </html>
